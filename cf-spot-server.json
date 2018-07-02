@@ -1,0 +1,178 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Resources": {
+    "SpotInstance": {
+      "Type": "AWS::EC2::SpotFleet",
+      "Properties": {
+        "SpotFleetRequestConfigData": {
+          "TargetCapacity": 1,
+          "AllocationStrategy": "lowestPrice",
+          "IamFleetRole": {
+            "Fn::GetAtt": [
+              "SpotServerRole",
+              "Arn"
+            ]
+          },
+          "LaunchSpecifications": [
+            {
+              "ImageId": {"Ref": "Ami"},
+              "KeyName": {"Ref": "KeyPair"} ,
+              "InstanceType": {"Ref": "Instance"},
+              "BlockDeviceMappings": [
+                {
+                  "DeviceName": "/dev/xvda",
+                  "Ebs": {
+                    "DeleteOnTermination": true,
+                    "VolumeType": "gp2",
+                    "VolumeSize": {"Ref": "DiskSize"}
+                  }
+                }
+              ],
+              "IamInstanceProfile": {
+                "Arn": {
+                  "Fn::GetAtt": [
+                    "SpotInstanceProfile",
+                    "Arn"
+                  ]
+                }
+              },
+              "UserData": {
+                "Fn::Base64": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "#!/bin/bash -ex",
+                      "\n",
+                      "sudo yum update -y",
+                      "\n"
+                    ]
+                  ]
+                }
+              },
+              "SecurityGroups": [
+                {
+                  "GroupId": {
+                    "Ref": "SpotSG"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "SpotSG": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "SSH access",
+        "VpcId": {
+          "Ref": "vpcId"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": {"Ref": "UserIpAddressCIDR"}
+          }
+        ]
+      }
+    },
+    "SpotServerRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "spotfleet.amazonaws.com",
+                  "ec2.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetRole"
+        ],
+        "Policies": [
+          {
+            "PolicyName": "s3bucket-access",
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Action": [
+                    "s3:*"
+                  ],
+                  "Resource": [
+                    "*"
+                  ],
+                  "Effect": "Allow"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "SpotInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [
+          {
+            "Ref": "SpotServerRole"
+          }
+        ]
+      }
+    }
+  },
+  "Parameters": {
+    "KeyPair": {
+        "Description": "Key pair to use for the ec2",
+        "Type": "AWS::EC2::KeyPair::KeyName"
+    },
+    "VpcId": {
+      "Description": "VPC to wich the instance will be launched",
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "UserIpAddressCIDR": {
+        "Description": "User ip address CIDR block to create route for the ssh (e.g. 192.168.12.12/32)",
+        "Type": "String"
+    },
+    "Ami": {
+        "Description": "Ami of the spot instance (E.g. ami-d834aba1 in Ireland AWS Ami)",
+        "Type": "AWS::EC2::Image::Id"
+    },
+    "Instance": {
+      "Description": "Instance family of sport instance (E.g. m5.xlarge)",
+      "Type": "String"
+    },
+    "DiskSize": {
+      "Description": "Instance disk size (e.g. 8)",
+      "Type": "Number"
+    }
+  },
+  "Outputs": {
+    "RoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "SpotServerRole",
+          "Arn"
+        ]
+      }
+    },
+    "SpotInstanceId": {
+      "Value": {
+        "Ref": "SpotInstance"
+      }
+    }
+  }
+}
